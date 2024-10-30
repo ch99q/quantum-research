@@ -12,7 +12,6 @@ import os
 def load_quantum_config():
     """Load environment variables for quantum computing"""
     load_dotenv()
-    
     IBMQ_TOKEN = os.getenv('IBMQ_TOKEN')
     CHANNEL = os.getenv('CHANNEL', 'ibm_quantum')
     INSTANCE = os.getenv('INSTANCE', 'ibm-q/open/main')
@@ -28,20 +27,16 @@ def load_quantum_config():
 
 def find_consecutive_line(coupling_map, min_length=7):
     """Find a consecutive line of connected qubits in the coupling map"""
-    # Convert coupling map to an adjacency list
     adj_list = {}
     for edge in coupling_map:
         q1, q2 = edge
-        if q1 not in adj_list:
-            adj_list[q1] = set()
-        if q2 not in adj_list:
-            adj_list[q2] = set()
+        if q1 not in adj_list: adj_list[q1] = set()
+        if q2 not in adj_list: adj_list[q2] = set()
         adj_list[q1].add(q2)
         adj_list[q2].add(q1)
     
     def dfs(start, visited, path):
-        if len(path) >= min_length:
-            return path
+        if len(path) >= min_length: return path
         visited.add(start)
         path.append(start)
         for next_qubit in adj_list[start]:
@@ -51,29 +46,23 @@ def find_consecutive_line(coupling_map, min_length=7):
                     return result
         return None
     
-    # Try each qubit as a starting point
     for start_qubit in adj_list:
         path = dfs(start_qubit, set(), [])
         if path and len(path) >= min_length:
             return path[:min_length]
-    
     return None
 
 def create_protection_circuits(qubit_line):
-    """Create circuits for quantum protection validation using specific qubit line"""
+    """Create circuits for quantum protection validation"""
     n_qubits = len(qubit_line)
-    
-    # Create quantum and classical registers with physical qubit mapping
     qr = QuantumRegister(n_qubits)
     cr = ClassicalRegister(n_qubits)
     circuits = []
     
-    # Base protection circuit
+    # Base circuit
     qc_base = QuantumCircuit(qr, cr)
-    # Apply H-gates to physical qubits
     for physical_qubit in qubit_line:
         qc_base.h(qr[qubit_line.index(physical_qubit)])
-    # Apply CX gates between adjacent physical qubits
     for i in range(n_qubits-1):
         control_idx = qubit_line.index(qubit_line[i])
         target_idx = qubit_line.index(qubit_line[i+1])
@@ -82,7 +71,7 @@ def create_protection_circuits(qubit_line):
     qc_base.measure(qr, cr)
     circuits.append(qc_base)
     
-    # Protection with rotation
+    # Protected circuit
     qc_protected = QuantumCircuit(qr, cr)
     for physical_qubit in qubit_line:
         qc_protected.h(qr[qubit_line.index(physical_qubit)])
@@ -99,8 +88,9 @@ def create_protection_circuits(qubit_line):
     qc_protected.measure(qr, cr)
     circuits.append(qc_protected)
     
-    # Test with delay
-    for delay in [16, 48, 96, 192, 384, 768, 1536,6144,24576,98304,393216,786432,3145728,12582912,50331648]:  # ns
+    # Delay tests
+    delays = [16, 48, 96, 192, 384, 768, 1536, 6144, 24576, 98304, 393216, 786432, 3145728, 12582912, 50331648]
+    for delay in delays:
         qc_delay = QuantumCircuit(qr, cr)
         for physical_qubit in qubit_line:
             qc_delay.h(qr[qubit_line.index(physical_qubit)])
@@ -121,65 +111,68 @@ def create_protection_circuits(qubit_line):
     
     return circuits
 
-def create_validation_circuits(qubit_line):
-    """Create circuits to validate uncertainty relations using specific qubit line"""
+def create_quantum_validation_circuits(qubit_line, delays):
+    """Create circuits to validate quantum behavior"""
     n_qubits = len(qubit_line)
     qr = QuantumRegister(n_qubits)
     cr = ClassicalRegister(n_qubits)
     circuits = []
     
-    # Position measurement
-    qc_pos = QuantumCircuit(qr, cr)
-    for physical_qubit in qubit_line:
-        qc_pos.h(qr[qubit_line.index(physical_qubit)])
-    qc_pos.barrier()
-    qc_pos.measure(qr, cr)
-    circuits.append(qc_pos)
+    # Bell State Test
+    for delay in delays:
+        qc_bell = QuantumCircuit(qr, cr)
+        # Create Bell state
+        qc_bell.h(qr[0])
+        qc_bell.cx(qr[0], qr[1])
+        qc_bell.barrier()
+        # Add delay
+        qc_bell.delay(delay, qr[0])
+        qc_bell.delay(delay, qr[1])
+        qc_bell.barrier()
+        # Bell measurement
+        qc_bell.h(qr[0])
+        qc_bell.measure(qr, cr)
+        circuits.append(qc_bell)
     
-    # Momentum measurement
-    qc_mom = QuantumCircuit(qr, cr)
-    for physical_qubit in qubit_line:
-        qc_mom.h(qr[qubit_line.index(physical_qubit)])
-        qc_mom.s(qr[qubit_line.index(physical_qubit)])
-    for physical_qubit in qubit_line:
-        qc_mom.h(qr[qubit_line.index(physical_qubit)])
-    qc_mom.barrier()
-    qc_mom.measure(qr, cr)
-    circuits.append(qc_mom)
+    # Phase Coherence Test
+    for delay in delays:
+        qc_phase = QuantumCircuit(qr, cr)
+        # Create superposition with phase
+        qc_phase.h(qr[0])
+        qc_phase.rz(np.pi/4, qr[0])
+        qc_phase.barrier()
+        # Add delay
+        qc_phase.delay(delay, qr[0])
+        qc_phase.barrier()
+        # Reverse phase and measure
+        qc_phase.rz(-np.pi/4, qr[0])
+        qc_phase.h(qr[0])
+        qc_phase.measure(qr, cr)
+        circuits.append(qc_phase)
+    
+    # GHZ State Test
+    for delay in delays:
+        qc_ghz = QuantumCircuit(qr, cr)
+        # Create GHZ state
+        qc_ghz.h(qr[0])
+        for i in range(n_qubits-1):
+            qc_ghz.cx(qr[i], qr[i+1])
+        qc_ghz.barrier()
+        # Add delay
+        for i in range(n_qubits):
+            qc_ghz.delay(delay, qr[i])
+        qc_ghz.barrier()
+        # Measure in superposition basis
+        for i in range(n_qubits):
+            qc_ghz.h(qr[i])
+        qc_ghz.measure(qr, cr)
+        circuits.append(qc_ghz)
     
     return circuits
 
-def optimize_circuits(circuits, backend):
-    """Optimize circuits for the backend with proper scheduling"""
-    # First create a pass manager for initial optimization and mapping to physical qubits
-    init_pm = generate_preset_pass_manager(
-        optimization_level=1,
-        basis_gates=backend.configuration().basis_gates,
-        coupling_map=backend.configuration().coupling_map,
-        target=backend.target
-    )
-    
-    # Run initial optimization and mapping
-    mapped_circuits = init_pm.run(circuits)
-    
-    # Now create a scheduling pass manager
-    scheduling_pm = PassManager([
-        TimeUnitConversion(target=backend.target),
-        ALAPSchedule(backend.instruction_durations)
-    ])
-    
-    # Run scheduling on mapped circuits
-    scheduled_circuits = scheduling_pm.run(mapped_circuits)
-    
-    # If it's a single circuit, wrap it in a list
-    if isinstance(scheduled_circuits, QuantumCircuit):
-        scheduled_circuits = [scheduled_circuits]
-    
-    return scheduled_circuits
-
 def main():
     try:
-        # Load configuration and initialize service
+        # Initialize quantum service
         config = load_quantum_config()
         service = QiskitRuntimeService(
             token=config['token'],
@@ -193,29 +186,35 @@ def main():
         print(f"Using backend: {backend.name}")
         print(f"Number of qubits: {backend.num_qubits}")
         
-        # Find a valid line of connected qubits
+        # Find qubit line
         coupling_map = backend.configuration().coupling_map
         qubit_line = find_consecutive_line(coupling_map, min_length=7)
-        
         if not qubit_line:
-            raise ValueError("Could not find a suitable line of connected qubits")
-            
+            raise ValueError("Could not find suitable qubit line")
         print(f"Using qubit line: {qubit_line}")
         
-        # Create circuits
+        # Create and optimize circuits
+        delays = [16, 48, 96, 192, 384, 768, 1536, 6144, 24576, 98304, 393216, 786432, 3145728, 12582912, 50331648]
         protection_circuits = create_protection_circuits(qubit_line)
-        validation_circuits = create_validation_circuits(qubit_line)
+        quantum_validation_circuits = create_quantum_validation_circuits(qubit_line, delays)
         
         # Optimize circuits
-        print("\nOptimizing protection circuits...")
-        protection_optimized = optimize_circuits(protection_circuits, backend)
-        print("Optimizing validation circuits...")
-        validation_optimized = optimize_circuits(validation_circuits, backend)
+        init_pm = generate_preset_pass_manager(
+            optimization_level=1,
+            basis_gates=backend.configuration().basis_gates,
+            coupling_map=backend.configuration().coupling_map,
+            target=backend.target
+        )
+        scheduling_pm = PassManager([
+            TimeUnitConversion(target=backend.target),
+            ALAPSchedule(backend.instruction_durations)
+        ])
         
-        # Create sampler
+        protection_optimized = scheduling_pm.run(init_pm.run(protection_circuits))
+        validation_optimized = scheduling_pm.run(init_pm.run(quantum_validation_circuits))
+        
+        # Create sampler and submit jobs
         sampler = Sampler(backend)
-        
-        # Submit jobs
         print("\nSubmitting jobs...")
         jobs = {
             'protection': sampler.run(protection_optimized),
@@ -238,11 +237,10 @@ def main():
                 'n_qubits': len(qubit_line),
                 'qubit_line': qubit_line,
                 'protection_angle': float(np.pi/4),
-                'delays': [16, 48, 96, 192, 384, 768, 1536,6144,24576,98304,393216,786432,3145728,12582912,50331648]
+                'delays': delays
             }
         }
         
-        # Save to file
         with open('jobs.json', 'w') as f:
             json.dump(job_info, f, indent=2)
         

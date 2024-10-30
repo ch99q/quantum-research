@@ -100,7 +100,7 @@ def create_protection_circuits(qubit_line):
     circuits.append(qc_protected)
     
     # Test with delay
-    for delay in [16, 48, 96, 192, 384, 768, 1536,6144,24576,98304,393216,786432]:  # ns
+    for delay in [16, 48, 96, 192, 384, 768, 1536,6144,24576,98304,393216,786432,3145728,12582912,50331648]:  # ns
         qc_delay = QuantumCircuit(qr, cr)
         for physical_qubit in qubit_line:
             qc_delay.h(qr[qubit_line.index(physical_qubit)])
@@ -238,7 +238,7 @@ def main():
                 'n_qubits': len(qubit_line),
                 'qubit_line': qubit_line,
                 'protection_angle': float(np.pi/4),
-                'delays': [16, 48, 96, 192, 384, 768, 1536,6144,24576,98304,393216,786432]
+                'delays': [16, 48, 96, 192, 384, 768, 1536,6144,24576,98304,393216,786432,3145728,12582912,50331648]
             }
         }
         

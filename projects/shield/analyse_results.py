@@ -25,7 +25,7 @@ def load_quantum_config():
     }
 
 def get_counts_from_result(result):
-    """Extract counts from result, handling different result formats including SamplerPubResult"""
+    """Extract counts from result"""
     if 'SamplerPubResult' in str(type(result)):
         data = result.data
         
@@ -44,7 +44,6 @@ def get_counts_from_result(result):
                     key = format(shot_value, f'0{bitarray.num_bits}b')
                     counts[key] = counts.get(key, 0) + 1
                 return counts
-                
             except AttributeError:
                 for shot_idx in range(bitarray.num_shots):
                     shot = []
@@ -58,10 +57,10 @@ def get_counts_from_result(result):
     raise ValueError(f"Unsupported result format: {type(result)}")
 
 def remap_counts(counts, qubit_line):
-    """Remap counts from physical to logical qubit ordering"""
+    """Remap counts from physical to logical qubits"""
     physical_to_logical = {phys: log for log, phys in enumerate(qubit_line)}
-    
     remapped_counts = {}
+    
     for bitstring, count in counts.items():
         bitstring = bitstring.zfill(len(qubit_line))
         remapped_bits = ['0'] * len(qubit_line)
@@ -74,11 +73,33 @@ def remap_counts(counts, qubit_line):
         
         remapped_key = ''.join(remapped_bits)
         remapped_counts[remapped_key] = remapped_counts.get(remapped_key, 0) + count
-                
+    
     return remapped_counts
 
+def analyze_bell_state(counts):
+    """Analyze Bell state measurement results"""
+    total = sum(counts.values())
+    correct_states = ['00', '11']  # Expected Bell state outcomes
+    fidelity = sum(counts.get(state, 0) for state in correct_states) / total
+    return fidelity
+
+def analyze_phase_coherence(counts):
+    """Analyze phase coherence measurement results"""
+    total = sum(counts.values())
+    # For perfect phase coherence, expect '0' state
+    coherence = counts.get('0', 0) / total
+    return coherence
+
+def analyze_ghz_state(counts, n_qubits):
+    """Analyze GHZ state measurement results"""
+    total = sum(counts.values())
+    # GHZ state should give equal superposition of all 0s and all 1s
+    expected_states = ['0' * n_qubits, '1' * n_qubits]
+    fidelity = sum(counts.get(state, 0) for state in expected_states) / total
+    return fidelity
+
 def calculate_protection_strength(counts, qubit_line):
-    """Calculate protection strength and its uncertainty from measurement results"""
+    """Calculate protection strength and uncertainty"""
     remapped_counts = remap_counts(counts, qubit_line)
     total = sum(remapped_counts.values())
     
@@ -88,229 +109,175 @@ def calculate_protection_strength(counts, qubit_line):
     expected = '0' * len(qubit_line)
     success_counts = remapped_counts.get(expected, 0)
     fidelity = success_counts / total
-    
     uncertainty = np.sqrt((fidelity * (1 - fidelity)) / total)
     
     return fidelity, uncertainty
 
-def calculate_uncertainty_product(pos_counts, mom_counts, qubit_line):
-    """Calculate uncertainty product from position and momentum measurements"""
-    def calculate_variance_with_uncertainty(counts):
-        remapped_counts = remap_counts(counts, qubit_line)
-        total = sum(remapped_counts.values())
-        
-        mean = sum(sum(int(bit) * 2**i for i, bit in enumerate(key)) * count 
-                  for key, count in remapped_counts.items()) / total
-                  
-        var = sum(sum((int(bit) * 2**i - mean)**2 for i, bit in enumerate(key)) * count 
-                 for key, count in remapped_counts.items()) / total
-                 
-        var_of_var = (2 * var**2) / (total - 1)
-        uncertainty = np.sqrt(var_of_var)
-            
-        return var, uncertainty
-    
-    var_x, unc_x = calculate_variance_with_uncertainty(pos_counts)
-    var_p, unc_p = calculate_variance_with_uncertainty(mom_counts)
-    
-    dx = np.sqrt(var_x)
-    dp = np.sqrt(var_p)
-    
-    dx_unc = unc_x / (2 * np.sqrt(var_x)) if var_x > 0 else 0
-    dp_unc = unc_p / (2 * np.sqrt(var_p)) if var_p > 0 else 0
-    
-    product = dx * dp
-    product_uncertainty = product * np.sqrt((dx_unc/dx)**2 + (dp_unc/dp)**2) if product > 0 else 0
-    
-    return product, product_uncertainty
-
-def plot_protection_results(delays, strengths, uncertainties, timestamp=None):
-    """Plot protection measurement results"""
+def plot_quantum_analysis(delays, protection_strengths, bell_fidelities, 
+                         phase_coherences, ghz_fidelities, timestamp=None):
+    """Plot comprehensive quantum analysis results"""
     if timestamp is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    plt.figure(figsize=(12, 10))
+    plt.figure(figsize=(15, 12))
     
-    plt.subplot(211)
-    plt.errorbar(delays, strengths, yerr=uncertainties, 
-                fmt='bo-', capsize=5, markersize=8, 
-                label='Protection Strength')
-    
-    plt.fill_between(delays, 
-                    [s-u for s,u in zip(strengths, uncertainties)],
-                    [s+u for s,u in zip(strengths, uncertainties)],
-                    alpha=0.2, color='blue')
-    
-    plt.axhline(y=0.5, color='r', linestyle='--', label='Theoretical Maximum')
-    plt.annotate('Theoretical Maximum', xy=(delays[0], 0.51), 
-                xytext=(delays[0] + 10, 0.52),
-                arrowprops=dict(facecolor='red', shrink=0.05))
-    
-    mean_strength = np.mean(strengths)
-    plt.axhline(y=mean_strength, color='g', linestyle=':', 
-                label=f'Mean = {mean_strength:.3f}')
-    
+    # Protection Strength vs Classical Threshold
+    plt.subplot(221)
+    # Skip the first two results (base and protected circuits)
+    plt.plot(delays, protection_strengths[2:], 'bo-', label='Protection Strength')
+    plt.axhline(y=0.5, color='r', linestyle='--', label='Classical Threshold')
+    plt.xscale('log')
     plt.xlabel('Delay (ns)')
-    plt.ylabel('Protection Strength')
-    plt.title('Quantum Protection vs Delay')
-    plt.grid(True, alpha=0.3)
+    plt.ylabel('Strength')
+    plt.title('Protection Strength vs Classical Threshold')
+    plt.grid(True)
     plt.legend()
     
-    plt.ylim([0, max(max(strengths) + max(uncertainties), 0.55)])
+    # Bell State Fidelity
+    plt.subplot(222)
+    plt.plot(delays, bell_fidelities, 'go-', label='Bell State Fidelity')
+    plt.axhline(y=0.7071, color='r', linestyle='--', label='Classical Limit')
+    plt.xscale('log')
+    plt.xlabel('Delay (ns)')
+    plt.ylabel('Fidelity')
+    plt.title('Bell State Fidelity Over Time')
+    plt.grid(True)
+    plt.legend()
     
-    plt.subplot(212)
+    # Phase Coherence
+    plt.subplot(223)
+    plt.plot(delays, phase_coherences, 'mo-', label='Phase Coherence')
+    plt.axhline(y=0.5, color='r', linestyle='--', label='Random Phase')
+    plt.xscale('log')
+    plt.xlabel('Delay (ns)')
+    plt.ylabel('Coherence')
+    plt.title('Phase Coherence Over Time')
+    plt.grid(True)
+    plt.legend()
     
-    q75, q25 = np.percentile(strengths, [75, 25])
-    iqr = q75 - q25
-    bin_width = 2 * iqr / (len(strengths) ** (1/3))
-    n_bins = int(np.ceil((max(strengths) - min(strengths)) / bin_width)) if bin_width > 0 else 5
-    
-    plt.hist(strengths, bins=n_bins, density=True, alpha=0.7, 
-            color='blue', edgecolor='black', label='Measurements')
-    
-    mean_strength = np.mean(strengths)
-    std_strength = np.std(strengths)
-    plt.axvline(mean_strength, color='r', linestyle='-', 
-                label=f'Mean = {mean_strength:.3f}')
-    plt.axvline(mean_strength + std_strength, color='g', linestyle='--', 
-                label=f'±1σ = {std_strength:.3f}')
-    plt.axvline(mean_strength - std_strength, color='g', linestyle='--')
-    
-    plt.xlabel('Protection Strength')
-    plt.ylabel('Density')
-    plt.title('Distribution of Protection Strengths')
-    plt.grid(True, alpha=0.3)
+    # GHZ State Fidelity
+    plt.subplot(224)
+    plt.plot(delays, ghz_fidelities, 'co-', label='GHZ Fidelity')
+    plt.axhline(y=0.5, color='r', linestyle='--', label='Classical Limit')
+    plt.xscale('log')
+    plt.xlabel('Delay (ns)')
+    plt.ylabel('Fidelity')
+    plt.title('GHZ State Fidelity Over Time')
+    plt.grid(True)
     plt.legend()
     
     plt.tight_layout()
     os.makedirs('figures', exist_ok=True)
-    plt.savefig(f'figures/protection_results_{timestamp}.png', dpi=300, bbox_inches='tight')
-    plt.close()
-
-def plot_validation_results(uncertainty_product, product_uncertainty, timestamp=None):
-    """Plot uncertainty relation validation results"""
-    if timestamp is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-    plt.figure(figsize=(10, 6))
-    
-    plt.bar(['Uncertainty Product'], [uncertainty_product], 
-            yerr=[product_uncertainty], capsize=5,
-            color='blue', alpha=0.7, label='Measured Value')
-    
-    plt.axhline(y=0.5, color='r', linestyle='--', 
-                label='Heisenberg Limit (ℏ/2)')
-    
-    plt.fill_between(['Uncertainty Product'], 
-                    [uncertainty_product - product_uncertainty], 
-                    [uncertainty_product + product_uncertainty],
-                    alpha=0.2, color='blue')
-    
-    plt.annotate(f'{uncertainty_product:.3f} ± {product_uncertainty:.3f}ℏ',
-                xy=('Uncertainty Product', uncertainty_product),
-                xytext=(0.2, uncertainty_product + 0.1),
-                ha='center',
-                arrowprops=dict(facecolor='black', shrink=0.05))
-    
-    plt.ylabel('Uncertainty Product (ℏ units)')
-    plt.title('Heisenberg Uncertainty Relation Validation')
-    
-    satisfaction_text = "Heisenberg Limit Satisfied" if uncertainty_product > 0.5 else "Below Heisenberg Limit"
-    satisfaction_color = "green" if uncertainty_product > 0.5 else "red"
-    plt.text(0.5, -0.1, satisfaction_text,
-             horizontalalignment='center',
-             transform=plt.gca().transAxes,
-             color=satisfaction_color,
-             fontsize=12,
-             fontweight='bold')
-    
-    plt.grid(True, alpha=0.3)
-    plt.legend()
-    
-    plt.ylim([0, max(uncertainty_product + product_uncertainty * 2, 0.7)])
-    
-    plt.tight_layout()
-    os.makedirs('figures', exist_ok=True)
-    plt.savefig(f'figures/uncertainty_validation_{timestamp}.png', dpi=300, bbox_inches='tight')
+    plt.savefig(f'figures/quantum_analysis_{timestamp}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
 def main():
     try:
+        # Load job information
         with open('jobs.json', 'r') as f:
             job_info = json.load(f)
         
+        # Initialize quantum service
         config = load_quantum_config()
         service = QiskitRuntimeService(
             channel=config['channel'],
             instance=config['instance']
         )
         
+        # Get results
         protection_results = service.job(job_info['jobs']['protection']).result()
         validation_results = service.job(job_info['jobs']['validation']).result()
         
         qubit_line = job_info['parameters']['qubit_line']
-        delays = [0] + job_info['parameters'].get('delays', [16, 48, 96, 192])
+        delays = job_info['parameters']['delays']
+        n_qubits = job_info['parameters']['n_qubits']
         
-        strengths = []
-        uncertainties = []
+        # Analyze protection results
+        protection_strengths = []
+        protection_uncertainties = []
         
-        for i, result in enumerate(protection_results):
-            if i >= len(delays):
-                break
-                
+        for result in protection_results:
             counts = get_counts_from_result(result)
             strength, uncertainty = calculate_protection_strength(counts, qubit_line)
-            strengths.append(strength)
-            uncertainties.append(uncertainty)
+            protection_strengths.append(strength)
+            protection_uncertainties.append(uncertainty)
         
-        pos_counts = get_counts_from_result(validation_results[0])
-        mom_counts = get_counts_from_result(validation_results[1])
+        # Store base and protected circuit results
+        base_strength = protection_strengths[0]
+        protected_strength = protection_strengths[1]
         
-        uncertainty_product, product_uncertainty = calculate_uncertainty_product(
-            pos_counts, mom_counts, qubit_line
-        )
+        # Analyze quantum validation results
+        bell_fidelities = []
+        phase_coherences = []
+        ghz_fidelities = []
         
+        for i in range(0, len(validation_results), 3):  # Process results in groups of 3
+            # Bell state results
+            bell_counts = get_counts_from_result(validation_results[i])
+            bell_fidelity = analyze_bell_state(bell_counts)
+            bell_fidelities.append(bell_fidelity)
+            
+            # Phase coherence results
+            phase_counts = get_counts_from_result(validation_results[i+1])
+            coherence = analyze_phase_coherence(phase_counts)
+            phase_coherences.append(coherence)
+            
+            # GHZ state results
+            ghz_counts = get_counts_from_result(validation_results[i+2])
+            ghz_fidelity = analyze_ghz_state(ghz_counts, n_qubits)
+            ghz_fidelities.append(ghz_fidelity)
+        
+        # Plot results with delay-based results only
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        plot_quantum_analysis(delays, protection_strengths, bell_fidelities,
+                            phase_coherences, ghz_fidelities, timestamp)
         
-        results_data = {
+        # Save analysis results
+        analysis_results = {
             'timestamp': timestamp,
             'protection': {
-                'delays': delays[:len(strengths)],
-                'strengths': strengths,
-                'uncertainties': uncertainties,
-                'statistics': {
-                    'mean_strength': float(np.mean(strengths)),
-                    'std_strength': float(np.std(strengths)),
-                    'max_strength': float(max(strengths)),
-                    'max_strength_delay': delays[strengths.index(max(strengths))]
-                }
+                'base_strength': float(base_strength),
+                'protected_strength': float(protected_strength),
+                'delays': delays,
+                'delay_strengths': protection_strengths[2:],  # Skip base and protected
+                'uncertainties': protection_uncertainties[2:],  # Skip base and protected
+                'mean_strength': float(np.mean(protection_strengths[2:])),
+                'max_strength': float(max(protection_strengths[2:])),
+                'max_strength_delay': delays[protection_strengths[2:].index(max(protection_strengths[2:]))]
             },
-            'validation': {
-                'uncertainty_product': float(uncertainty_product),
-                'product_uncertainty': float(product_uncertainty),
-                'heisenberg_satisfied': bool(uncertainty_product > 0.5)
-            },
-            'qubit_line': qubit_line
+            'quantum_validation': {
+                'bell_fidelities': bell_fidelities,
+                'phase_coherences': phase_coherences,
+                'ghz_fidelities': ghz_fidelities,
+                'mean_bell_fidelity': float(np.mean(bell_fidelities)),
+                'mean_phase_coherence': float(np.mean(phase_coherences)),
+                'mean_ghz_fidelity': float(np.mean(ghz_fidelities))
+            }
         }
         
         os.makedirs('results', exist_ok=True)
-        with open(f'results/quantum_results_{timestamp}.json', 'w') as f:
-            json.dump(results_data, f, indent=2)
+        with open(f'results/quantum_analysis_{timestamp}.json', 'w') as f:
+            json.dump(analysis_results, f, indent=2)
         
-        print("\nResults Summary:")
+        print("\nAnalysis Results:")
         print(f"Protection:")
-        print(f"  Mean Strength: {np.mean(strengths):.4f} ± {np.std(strengths):.4f}")
-        print(f"  Max Strength: {max(strengths):.4f} at {delays[strengths.index(max(strengths))]}ns")
-        print(f"Validation:")
-        print(f"  Uncertainty Product: {uncertainty_product:.4f} ± {product_uncertainty:.4f}ℏ")
-        print(f"  Heisenberg Limit Satisfied: {uncertainty_product > 0.5}")
-        
-        plot_protection_results(delays[:len(strengths)], strengths, uncertainties, timestamp)
-        plot_validation_results(uncertainty_product, product_uncertainty, timestamp)
+        print(f"  Base Strength: {base_strength:.4f}")
+        print(f"  Protected Strength: {protected_strength:.4f}")
+        print(f"  Mean Delay Strength: {np.mean(protection_strengths[2:]):.4f} ± {np.std(protection_strengths[2:]):.4f}")
+        print(f"  Max Delay Strength: {max(protection_strengths[2:]):.4f} at {delays[protection_strengths[2:].index(max(protection_strengths[2:]))]}ns")
+        print(f"\nQuantum Validation:")
+        print(f"  Mean Bell State Fidelity: {np.mean(bell_fidelities):.4f}")
+        print(f"  Mean Phase Coherence: {np.mean(phase_coherences):.4f}")
+        print(f"  Mean GHZ State Fidelity: {np.mean(ghz_fidelities):.4f}")
+        print(f"\nQuantum Nature Assessment:")
+        print(f"  Bell State Test: {'Quantum' if np.mean(bell_fidelities) > 0.7071 else 'Classical'}")
+        print(f"  Phase Coherence: {'Maintained' if np.mean(phase_coherences) > 0.5 else 'Lost'}")
+        print(f"  GHZ State Test: {'Quantum' if np.mean(ghz_fidelities) > 0.5 else 'Classical'}")
         
     except Exception as e:
         print(f"Error in analysis: {e}")
-        raise
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()

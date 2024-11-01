@@ -1,5 +1,5 @@
 {
-  "timestamp": "2024-11-01T14:27:20.043423",
+  "timestamp": "2024-11-01T13:28:42.697850",
   "backend_name": "ibm_brisbane",
   "backend_config": {
     "num_qubits": 127,
@@ -11,7 +11,7 @@
       "x"
     ]
   },
-  "job_id": "cwjdedh9r49g0089438g",
+  "job_id": "cwjcjyb0r6b0008pt7sg",
   "circuit_indices": {
     "protection": [
       0,

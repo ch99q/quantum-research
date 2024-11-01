@@ -70,58 +70,62 @@ def bitarray_to_counts(bitarray):
     return counts
 
 def analyze_quantum_results(results, qubit_line, test_type, circuit_indices):
-    """Analyze quantum results based on test type"""
+    """Analyze quantum results based on test type
+    
+    Args:
+        results: Qiskit result object
+        qubit_line (List[int]): Physical qubit indices
+        test_type (str): Type of quantum test ('bell', 'phase', 'ghz')
+        circuit_indices (Dict): Start and end indices for test circuits
+        
+    Returns:
+        List[float]: Analyzed fidelity/coherence values
+    """
     start_idx, end_idx = circuit_indices[test_type]
     analyzed_data = []
     
     for circuit_result in results[start_idx:end_idx]:
-        # Get measurement data from data registers
-        if hasattr(circuit_result, 'data'):
-            # Try to find any measurement register
-            bitarray = None
-            data_attrs = dir(circuit_result.data)
-            
-            # Find all measurement registers (c0, c1, c2, etc)
-            measurement_regs = [attr for attr in data_attrs if attr.startswith('c') and attr[1:].isdigit()]
-            
-            if measurement_regs:
-                # Use the first available measurement register
+        # Get counts data with better error handling
+        try:
+            if hasattr(circuit_result, 'data'):
+                measurement_regs = [attr for attr in dir(circuit_result.data) 
+                                 if attr.startswith('c') and attr[1:].isdigit()]
+                if not measurement_regs:
+                    raise ValueError(f"No measurement registers found. Available: {dir(circuit_result.data)}")
                 bitarray = getattr(circuit_result.data, measurement_regs[0])
+                counts = bitarray_to_counts(bitarray)
+            elif hasattr(circuit_result, 'quasi_dists'):
+                counts = {format(k, f'0{len(qubit_line)}b'): int(v * circuit_result.shots) 
+                         for k, v in circuit_result.quasi_dists[0].items()}
+            else:
+                raise ValueError(f"Unexpected result format. Found attributes: {dir(circuit_result)}")
             
-            if bitarray is None:
-                print(f"Available data attributes: {data_attrs}")
-                raise ValueError("No measurement registers found in result")
-                
-            counts = bitarray_to_counts(bitarray)
+            # Analysis with updated theoretical bounds
+            if test_type == 'bell':
+                remapped_counts = remap_counts(counts, qubit_line[:2])
+                total = sum(remapped_counts.values())
+                correct_states = ['00', '11']
+                fidelity = sum(remapped_counts.get(state, 0) for state in correct_states) / total
+                analyzed_data.append(fidelity)
             
-        elif hasattr(circuit_result, 'quasi_dists'):
-            # Handle quasi-distribution format
-            counts = {format(k, f'0{len(qubit_line)}b'): int(v * circuit_result.shots) 
-                     for k, v in circuit_result.quasi_dists[0].items()}
-        else:
-            print(f"Available result attributes: {dir(circuit_result)}")
-            raise ValueError("Unexpected result format - no data or quasi_dists found")
-        
-        # Analysis logic remains the same
-        if test_type == 'bell':
-            remapped_counts = remap_counts(counts, qubit_line[:2])
-            total = sum(remapped_counts.values())
-            correct_states = ['00', '11']
-            fidelity = sum(remapped_counts.get(state, 0) for state in correct_states) / total
-            analyzed_data.append(fidelity)
-        
-        elif test_type == 'phase':
-            remapped_counts = remap_counts(counts, qubit_line[:1])
-            total = sum(remapped_counts.values())
-            coherence = remapped_counts.get('0', 0) / total
-            analyzed_data.append(coherence)
-        
-        elif test_type == 'ghz':
-            remapped_counts = remap_counts(counts, qubit_line)
-            total = sum(remapped_counts.values())
-            expected_states = ['0' * len(qubit_line), '1' * len(qubit_line)]
-            fidelity = sum(remapped_counts.get(state, 0) for state in expected_states) / total
-            analyzed_data.append(fidelity)
+            elif test_type == 'phase':
+                remapped_counts = remap_counts(counts, qubit_line[:1])
+                total = sum(remapped_counts.values())
+                # Phase test expects |0⟩ state
+                coherence = remapped_counts.get('0', 0) / total
+                analyzed_data.append(coherence)
+            
+            elif test_type == 'ghz':
+                remapped_counts = remap_counts(counts, qubit_line)
+                total = sum(remapped_counts.values())
+                # GHZ state: (|000...0⟩ + |111...1⟩)/√2
+                expected_states = ['0' * len(qubit_line), '1' * len(qubit_line)]
+                fidelity = sum(remapped_counts.get(state, 0) for state in expected_states) / total
+                analyzed_data.append(fidelity)
+            
+        except Exception as e:
+            print(f"Error analyzing circuit result: {e}")
+            analyzed_data.append(0.0)  # Add sentinel value
     
     return analyzed_data
 
@@ -152,7 +156,7 @@ def plot_quantum_results(results_data, params, timestamp):
             'title': 'Bell State Analysis',
             'metrics': {'Fidelity': 'analyzed_data'},
             'limits': {
-                'Classical Limit': 0.7071,  # 1/√2
+                'Classical Limit': 0.5,
                 'Heisenberg Limit': 1.0
             }
         },
@@ -169,7 +173,7 @@ def plot_quantum_results(results_data, params, timestamp):
             'metrics': {'Fidelity': 'analyzed_data'},
             'limits': {
                 'Classical Bound': 0.5,
-                'Genuine Entanglement': 0.5,  # Threshold for genuine n-partite entanglement
+                'Genuine Entanglement': 0.7,
                 'Perfect GHZ': 1.0
             }
         }

@@ -17,6 +17,9 @@ def calculate_delays():
         10000000    # 10.0 ms
     ]
     
+    if any(t < 0 for t in desired_times):
+        raise ValueError("Delays must be non-negative")
+    
     # Adjust times to be divisible by 8
     delays = [time + (8 - (time % 8)) if time % 8 != 0 else time for time in desired_times]
 
@@ -24,7 +27,16 @@ def calculate_delays():
     return delays
 
 def add_protection_sequence(circuit, qubit, duration, protection_interval=50000):
-    """Add protection rotations at regular intervals"""
+    """Add protection rotations at regular intervals
+    
+    Args:
+        circuit (QuantumCircuit): Circuit to add protection to
+        qubit (Qubit): Target qubit
+        duration (int): Total delay duration in ns
+        protection_interval (int): Interval between protections in ns
+    """
+    if duration < 0 or protection_interval <= 0:
+        raise ValueError("Duration and protection interval must be positive")
     angle = np.pi/4
     num_sequences = int(duration / protection_interval)
     
@@ -45,8 +57,8 @@ def create_base_circuit(qubit_line):
     qc = QuantumCircuit(qr, cr)
 
     # Create entangled state properly mapped to physical qubits
-    for i in enumerate(qubit_line):
-        qc.h(qr[i])  # Use logical index directly
+    for i in range(n_qubits):
+        qc.h(qr[i]) # Use direct indices
     
     for i in range(n_qubits-1):
         qc.cx(qr[i], qr[i+1])  # Use sequential logical indices
@@ -55,6 +67,9 @@ def create_base_circuit(qubit_line):
 
 def create_protection_circuits(qubit_line, delays):
     """Create circuits for quantum protection validation"""
+    n_qubits = len(qubit_line)
+    qr = QuantumRegister(n_qubits)
+    cr = ClassicalRegister(n_qubits)
     circuits = []
     
     # Base circuit (no protection)
@@ -67,20 +82,17 @@ def create_protection_circuits(qubit_line, delays):
     for delay in delays:
         qc_protected = QuantumCircuit(qr, cr)
         
-        # Initial state preparation
-        for physical_qubit in qubit_line:
-            qc_protected.h(qr[qubit_line.index(physical_qubit)])
-        for i in range(len(qubit_line)-1):
-            control_idx = qubit_line.index(qubit_line[i])
-            target_idx = qubit_line.index(qubit_line[i+1])
-            qc_protected.cx(qr[control_idx], qr[target_idx])
+        # Initial state preparation - use direct indices
+        for i in range(n_qubits):
+            qc_protected.h(qr[i])
+        for i in range(n_qubits-1):
+            qc_protected.cx(qr[i], qr[i+1])
         
         qc_protected.barrier()
         
-        # Add protection sequences for each qubit
-        for physical_qubit in qubit_line:
-            idx = qubit_line.index(physical_qubit)
-            add_protection_sequence(qc_protected, qr[idx], delay)
+        # Add protection sequences
+        for i in range(n_qubits):
+            add_protection_sequence(qc_protected, qr[i], delay)
         
         qc_protected.barrier()
         qc_protected.measure(qr, cr)
@@ -89,51 +101,64 @@ def create_protection_circuits(qubit_line, delays):
     return circuits
 
 def create_bell_test_circuits(qubit_line, delays):
-    """Create separate circuits for each delay in Bell state test"""
+    """Create Bell state test circuits
+    
+    Args:
+        qubit_line (list[int]): Physical qubit indices
+        delays (list[int]): Delay times in nanoseconds
+        
+    Returns:
+        list[QuantumCircuit]: List of test circuits
+    """
     circuits = []
     
     for delay in delays:
-        qr = QuantumRegister(2)
-        cr = ClassicalRegister(2)
+        qr = QuantumRegister(len(qubit_line))
+        cr = ClassicalRegister(len(qubit_line))
         qc = QuantumCircuit(qr, cr)
         
-        # Create Bell state
         qc.h(qr[0])
         qc.cx(qr[0], qr[1])
         qc.barrier()
         
-        # Add protection sequences
         add_protection_sequence(qc, qr[0], delay)
         add_protection_sequence(qc, qr[1], delay)
         
         qc.barrier()
-        qc.h(qr[0])  # Bell measurement
-        qc.measure(qr, cr)
+        qc.cx(qr[0], qr[1])  # Bell basis transformation
+        qc.h(qr[0])
+        qc.measure(qr[0:2], cr[0:2])
         
         circuits.append(qc)
     
     return circuits
 
 def create_phase_test_circuits(qubit_line, delays):
-    """Create separate circuits for each delay in phase test"""
+    """Create phase coherence test circuits
+    
+    Args:
+        qubit_line (list[int]): Physical qubit indices
+        delays (list[int]): Delay times in nanoseconds
+        
+    Returns:
+        list[QuantumCircuit]: List of test circuits
+    """
     circuits = []
     
     for delay in delays:
-        qr = QuantumRegister(1)
-        cr = ClassicalRegister(1)
+        qr = QuantumRegister(len(qubit_line))
+        cr = ClassicalRegister(len(qubit_line))
         qc = QuantumCircuit(qr, cr)
         
-        # Create superposition with phase
         qc.h(qr[0])
         qc.rz(np.pi/4, qr[0])
         qc.barrier()
         
-        # Add protection sequence
         add_protection_sequence(qc, qr[0], delay)
         
         qc.barrier()
-        qc.rz(-np.pi/4, qr[0])
-        qc.h(qr[0])
+        qc.s(qr[0])  # S gate for π/2 phase
+        qc.h(qr[0])  # Hadamard for phase measurement
         qc.measure(qr[0], cr[0])
         
         circuits.append(qc)
@@ -141,7 +166,15 @@ def create_phase_test_circuits(qubit_line, delays):
     return circuits
 
 def create_ghz_test_circuits(qubit_line, delays):
-    """Create separate circuits for each delay in GHZ test"""
+    """Create GHZ state test circuits
+    
+    Args:
+        qubit_line (list[int]): Physical qubit indices
+        delays (list[int]): Delay times in nanoseconds
+        
+    Returns:
+        list[QuantumCircuit]: List of test circuits
+    """
     circuits = []
     n_qubits = len(qubit_line)
     
@@ -150,18 +183,18 @@ def create_ghz_test_circuits(qubit_line, delays):
         cr = ClassicalRegister(n_qubits)
         qc = QuantumCircuit(qr, cr)
         
-        # Create GHZ state
         qc.h(qr[0])
-        for j in range(n_qubits-1):
-            qc.cx(qr[j], qr[j+1])
+        for i in range(n_qubits-1):
+            qc.cx(qr[i], qr[i+1])
         qc.barrier()
         
-        # Add protection sequences
-        for j in range(n_qubits):
-            add_protection_sequence(qc, qr[j], delay)
+        for i in range(n_qubits):
+            add_protection_sequence(qc, qr[i], delay)
         
         qc.barrier()
-        qc.h(qr)  # Apply H to all qubits
+        for i in range(n_qubits-1):
+            qc.cx(qr[i], qr[i+1])
+        qc.h(qr[0])  # Reference basis
         qc.measure(qr, cr)
         
         circuits.append(qc)

@@ -76,26 +76,62 @@ def remap_counts(counts, qubit_line):
     
     return remapped_counts
 
-def analyze_bell_state(counts):
-    """Analyze Bell state measurement results"""
-    total = sum(counts.values())
-    correct_states = ['00', '11']  # Expected Bell state outcomes
-    fidelity = sum(counts.get(state, 0) for state in correct_states) / total
+def analyze_bell_state(counts, qubit_line):
+    """Analyze Bell state measurement results with proper qubit remapping"""
+    # Remap counts from physical to logical qubits
+    remapped_counts = remap_counts(counts, qubit_line)
+    total = sum(remapped_counts.values())
+    
+    if total == 0:
+        return 0.0
+    
+    # For Bell state, we only care about the first two qubits
+    # Aggregate counts based on first two qubits
+    bell_counts = {}
+    for bitstring, count in remapped_counts.items():
+        # Take only first two bits
+        bell_key = bitstring[:2]
+        bell_counts[bell_key] = bell_counts.get(bell_key, 0) + count
+    
+    # Calculate fidelity based on expected Bell state outcomes
+    correct_states = ['00', '11']
+    fidelity = sum(bell_counts.get(state, 0) for state in correct_states) / total
     return fidelity
 
-def analyze_phase_coherence(counts):
-    """Analyze phase coherence measurement results"""
-    total = sum(counts.values())
-    # For perfect phase coherence, expect '0' state
-    coherence = counts.get('0', 0) / total
+def analyze_phase_coherence(counts, qubit_line):
+    """Analyze phase coherence with proper qubit remapping"""
+    # Remap counts from physical to logical qubits
+    remapped_counts = remap_counts(counts, qubit_line)
+    total = sum(remapped_counts.values())
+    
+    if total == 0:
+        return 0.0
+    
+    # For phase coherence, we only care about the first qubit
+    # Aggregate counts based on first qubit
+    phase_counts = {'0': 0, '1': 0}
+    for bitstring, count in remapped_counts.items():
+        first_bit = bitstring[0]
+        phase_counts[first_bit] += count
+    
+    # For perfect phase coherence after the full sequence,
+    # expect to return to |0⟩ state
+    coherence = phase_counts['0'] / total
     return coherence
 
-def analyze_ghz_state(counts, n_qubits):
-    """Analyze GHZ state measurement results"""
-    total = sum(counts.values())
+def analyze_ghz_state(counts, qubit_line):
+    """Analyze GHZ state with proper qubit remapping"""
+    # Remap counts from physical to logical qubits
+    remapped_counts = remap_counts(counts, qubit_line)
+    total = sum(remapped_counts.values())
+    
+    if total == 0:
+        return 0.0
+    
+    n_qubits = len(qubit_line)
     # GHZ state should give equal superposition of all 0s and all 1s
     expected_states = ['0' * n_qubits, '1' * n_qubits]
-    fidelity = sum(counts.get(state, 0) for state in expected_states) / total
+    fidelity = sum(remapped_counts.get(state, 0) for state in expected_states) / total
     return fidelity
 
 def calculate_protection_strength(counts, qubit_line):
@@ -214,17 +250,17 @@ def main():
         for i in range(0, len(validation_results), 3):  # Process results in groups of 3
             # Bell state results
             bell_counts = get_counts_from_result(validation_results[i])
-            bell_fidelity = analyze_bell_state(bell_counts)
+            bell_fidelity = analyze_bell_state(bell_counts, qubit_line)
             bell_fidelities.append(bell_fidelity)
             
             # Phase coherence results
             phase_counts = get_counts_from_result(validation_results[i+1])
-            coherence = analyze_phase_coherence(phase_counts)
+            coherence = analyze_phase_coherence(phase_counts, qubit_line)
             phase_coherences.append(coherence)
             
             # GHZ state results
             ghz_counts = get_counts_from_result(validation_results[i+2])
-            ghz_fidelity = analyze_ghz_state(ghz_counts, n_qubits)
+            ghz_fidelity = analyze_ghz_state(ghz_counts, qubit_line)
             ghz_fidelities.append(ghz_fidelity)
         
         # Plot results with delay-based results only

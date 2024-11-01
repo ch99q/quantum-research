@@ -1,0 +1,62 @@
+{
+  "timestamp": "2024-11-01T13:28:42.697850",
+  "backend_name": "ibm_brisbane",
+  "backend_config": {
+    "num_qubits": 127,
+    "basis_gates": [
+      "ecr",
+      "id",
+      "rz",
+      "sx",
+      "x"
+    ]
+  },
+  "job_id": "cwjcjyb0r6b0008pt7sg",
+  "circuit_indices": {
+    "protection": [
+      0,
+      14
+    ],
+    "bell": [
+      14,
+      27
+    ],
+    "phase": [
+      27,
+      40
+    ],
+    "ghz": [
+      40,
+      53
+    ]
+  },
+  "parameters": {
+    "n_qubits": 7,
+    "qubit_line": [
+      1,
+      0,
+      14,
+      18,
+      19,
+      20,
+      33
+    ],
+    "protection_angle": 0.7853981633974483,
+    "protection_interval": 50000,
+    "delays": [
+      0,
+      16,
+      48,
+      96,
+      1536,
+      24576,
+      88888,
+      100000,
+      200000,
+      1000000,
+      3000000,
+      5000000,
+      10000000
+    ]
+  }
+}
